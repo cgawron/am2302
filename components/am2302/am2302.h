@@ -23,23 +23,24 @@ typedef void (*am2302_cb_t)(double temperature, double humidity);
  * @brief Initialize the AM2302 driver 
  *
  * @param  gpio_pin GPIO number of the AM2302 SDA pin
- * @param callback Pointer to a callback function receiving the results of subsequent measurements
  *
  * @return
  *     - ESP_OK success
  *     - ESP_ERR_INVALID_ARG Parameter error
  *
  */
-esp_err_t init_am2302(int gpio_pin, am2302_cb_t cb);
+esp_err_t init_am2302(int gpio_pin);
 
 /**
  * @brief Start measurement of humidity and temperature on the AM2302 
  *
+ * @param callback Pointer to a callback function receiving the results of subsequent measurements
+ * 
  * @return
  *     - ESP_OK success
  *     - ESP_FAIL Operation fail
  *
  */
-esp_err_t read_am2302();
+esp_err_t read_am2302(am2302_cb_t cb);
 
 #endif

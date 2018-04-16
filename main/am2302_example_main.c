@@ -14,13 +14,13 @@ void callback(double temperature, double humidity) {
 
 void app_main()
 {
-    init_am2302(AM2302_PIN, callback);
+    init_am2302(AM2302_PIN);
 
     int cnt = 0;
     while (1)
     {
         printf("cnt: %d\n", cnt++);
-        read_am2302();
+        read_am2302(callback);
         vTaskDelay(30000 / portTICK_RATE_MS);
     }
 }

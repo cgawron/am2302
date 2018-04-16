@@ -29,10 +29,9 @@ static const char* TAG = "AM2302";
 static xQueueHandle am2302_evt_queue = NULL;
 static int64_t start_time;
 
-static void IRAM_ATTR am2302_isr_handler(int64_t *pStart_time)
+static void IRAM_ATTR am2302_isr_handler(void *p)
 {
     int64_t time = esp_timer_get_time();
-    time -= *pStart_time;
     xQueueSendFromISR(am2302_evt_queue, &time, NULL);
 }
 
@@ -48,7 +47,8 @@ static void am2302_task(am2302_cb_t cb)
         {
             if (xQueueReceive(am2302_evt_queue, &time, portMAX_DELAY))
             {
-                // printf("AM2302 edge intr, time: %lld\n", time);
+                ESP_LOGD(TAG, "AM2303 edge interrupt triggered at %lld [%lld after start]", time, time - start_time); 
+                time -= start_time;
 
                 if (time < 200 || time > 8000)
                 {
@@ -84,13 +84,14 @@ static void am2302_task(am2302_cb_t cb)
 
 
 static int gpio_pin;
+static TaskHandle_t task = NULL;
 
-esp_err_t read_am2302()
+esp_err_t read_am2302(am2302_cb_t cb)
 {
-    static gpio_config_t io_conf;
 
-    //bit mask of the pins
-    io_conf.pin_bit_mask = BIT(gpio_pin);
+    if (task) {
+        vTaskDelete(task);
+    }
 
     // == Send start signal to DHT sensor ===========
 
@@ -102,29 +103,23 @@ esp_err_t read_am2302()
 
     // pull up for 25 us for a gentile asking for data
     gpio_set_level(gpio_pin, 1);
-    ets_delay_us(25);
+    ets_delay_us(10);
 
     start_time = esp_timer_get_time();
-    
-    //hook isr handler for specific gpio pin
-    gpio_isr_handler_add(gpio_pin, am2302_isr_handler, &start_time);
+    // empty queue
+    xQueueReset(am2302_evt_queue);
 
-    //interrupt of rising edge
-    io_conf.intr_type = GPIO_INTR_NEGEDGE;
+    //start gpio task
+    xTaskCreate((TaskFunction_t) am2302_task, "am2302 task", 2048, (void *) cb, 10, &task);
 
-    //set as input mode
-    io_conf.mode = GPIO_MODE_INPUT;
-
-    //enable pull-up mode
-    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-
-    gpio_config(&io_conf);
+    gpio_set_direction(gpio_pin, GPIO_MODE_INPUT);
 
     return ESP_OK; 
 }
 
-esp_err_t init_am2302(int _gpio_pin, am2302_cb_t cb)
+esp_err_t init_am2302(int _gpio_pin)
 {
+    static gpio_config_t io_conf; 
     gpio_pin = _gpio_pin;
     gpio_set_direction(gpio_pin, GPIO_MODE_OUTPUT);
 
@@ -134,15 +129,26 @@ esp_err_t init_am2302(int _gpio_pin, am2302_cb_t cb)
     //create a queue to handle gpio event from isr
     am2302_evt_queue = xQueueCreate(64, sizeof(int64_t));
 
-    //start gpio task
-    xTaskCreate(am2302_task, "am2302 task", 2048, cb, 10, NULL);
-
     //install gpio isr service
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     
- 
+    //hook isr handler for specific gpio pin
+    gpio_isr_handler_add(gpio_pin, am2302_isr_handler, NULL);
 
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    //bit mask of the pins
+    io_conf.pin_bit_mask = BIT(gpio_pin);
+
+    //interrupt of rising edge
+    io_conf.intr_type = GPIO_INTR_NEGEDGE;
+
+    //set as input mode
+    io_conf.mode = GPIO_MODE_OUTPUT;
+
+    //enable pull-up mode
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
 
     return ESP_OK;
 }
